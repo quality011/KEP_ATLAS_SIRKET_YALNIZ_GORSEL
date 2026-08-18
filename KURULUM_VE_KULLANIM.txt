@@ -1,0 +1,71 @@
+KEP ATLAS SIRKET YALNIZ GORSEL BOTU
+====================================
+
+BU SURUMUN AMACI
+- Telegram, Tailscale veya merkezi kumanda kullanmaz.
+- Kullaniciya verilen 6 haneli Kep Atlas ID listesini dogrudan alir.
+- Atlas'ta gorseli olan oteli atlar; yalniz gorseli bos otelleri isler.
+- Dogrulanmis en fazla 3 farkli kaynak siteyi sirayla deneyebilir.
+- Kaynak onceligi Hotels.com, Trivago, ETS ve son olarak Obilet'tir.
+- Gorselleri cozumurluk filtresinden gecirip 3 paralel Chrome iscisiyle yukler.
+- Icerik ve Genel alanlarina veri yazmaz.
+- OpenAI kullanmaz. Kaynak aramak ve okumak icin Exa Search + Contents kullanir.
+- Exa sorgusunda otel adi, ilce/mevki ve Atlas'taki tam adres birlikte kullanilir.
+- Sayfa menuleri/olanak metinleri adres sanilmaz; isim+ilce ve tam adres kurallari
+  ayrica dogrulanir.
+- Yabanci dilde gelen Trivago URL'leri Turkce galeri sayfasina cevrilir.
+
+HER BILGISAYARDA BIR KEZ YAPILACAK KURULUM
+1. ZIP dosyasini bir klasore cikarin. ZIP'in icinden calistirmayin.
+2. Mumkunse kisa ve yerel bir yol kullanin:
+   C:\KepAtlasGorselBotu
+   OneDrive/Google Drive icinde calistirmak tavsiye edilmez.
+3. Google Chrome kurulu olmalidir.
+4. Python 3.11 veya ustu kurulu olmalidir. Yoksa:
+   https://www.python.org/downloads/windows/
+   Kurulumda "Add python.exe to PATH" secenegini isaretleyin.
+5. 1_KURULUM_YAP.cmd dosyasina cift tiklayin.
+6. Ekranda KURULUM BASARILI yazisini gorene kadar pencereyi kapatmayin.
+
+HER YENI ID LISTESINDE
+1. 2_ID_LISTESINI_CALISTIR.cmd dosyasina cift tiklayin.
+2. 6 haneli ID'leri boslukla, virgulle veya alt alta yapistirin.
+3. Son ID'den sonra bos satirda bir kez daha Enter'a basin.
+4. Sayiyi kontrol edip BASLAT yazin.
+5. Yetkili Kep Atlas e-posta/sifresini girin.
+6. Sirketin verdigi Exa API anahtarini girin.
+7. Acilan Chrome ve CMD pencerelerini islem bitene kadar kapatmayin.
+
+KESINTI VEYA CMD KAPANMASI
+- Ayni klasorde 3_KALDIGI_YERDEN_DEVAM.cmd dosyasini acin.
+- En son yarim kalan yerel gorev veritabani otomatik bulunur.
+- Daha once yuklenmis gorseller yeniden yuklenmez; Atlas kontrol edilir.
+
+SIRKET ICIN DAGITIM KURALLARI
+- Her calisan ZIP'i kendi bilgisayarinda ayri klasore cikarmalidir.
+- Paket icinde Kep Atlas sifresi, Exa anahtari veya kullanici bilgisi yoktur.
+- Her calisana yalnizca yetkili hesap ve Exa anahtari verilmelidir.
+- Ayni otel ID'sini iki calisana ayni anda vermeyin.
+- Bir Exa anahtari birden fazla PC'de kullanilabilir; ancak ortak kota ve 429
+  sinirina girer. Eszamanli yogun kullanimda kisi/PC basina ayri anahtar onerilir.
+- Bu surumde merkezi kilit yoktur; ID dagitiminin cakismamasi yoneticinin
+  sorumlulugundadir.
+
+RAPORLAR
+- yalniz_gorsel_calismalari\TARIH_SAAT\sonuc.csv
+- yalniz_gorsel_calismalari\TARIH_SAAT\kontrol_edilecek_atlas_linkleri.txt
+- yalniz_gorsel_calismalari\TARIH_SAAT\sorunlu_ve_atlanan_oteller.csv
+- logs\yalniz_gorsel_*.log
+
+SORUN GIDERME
+- "No module named selenium": 1_KURULUM_YAP.cmd dosyasini calistirin.
+- Python bulunamadi: Python 3.11+ kurup kurulum dosyasini yeniden acin.
+- Exa 401/403: API anahtari yanlis veya yetkisizdir.
+- Exa 402: hesabin bakiyesi/plani yetersizdir.
+- Exa 429: ayni anahtar cok hizli kullaniliyor; bekleyin veya ayri anahtar kullanin.
+- Chrome acilmazsa Chrome'u guncelleyip kurulumu tekrar calistirin.
+
+GUVENLIK
+- Sifre ve Exa anahtari ekranda gorunmez okunur.
+- Anahtarlar koda, loga veya ayar dosyasina yazilmaz.
+- Program kapandiginda gecici ortam degiskenleri temizlenir.

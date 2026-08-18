@@ -1,0 +1,23 @@
+Surum: 2026.08.17-sirket-yalniz-gorsel-verimlilik-1
+Calisma: Dogrudan 6 haneli Kep Atlas ID listesi
+Kapsam: Yalniz gorsel; Icerik ve Genel kapali
+Kumanda: Yok (Telegram/Tailscale/Supabase yok)
+Kaynak: Exa Search + Contents
+Gorsel isci: 3 paralel Chrome (--gorsel-isci ile 4'e kadar artirilabilir)
+Arama: Dogal dilli otel adi + ilce/mevki + tam Atlas adresi, site basina 20 aday
+Trivago: Yabanci alan adlari Turkce galeri sayfasina otomatik donusturulur
+
+DEGISIKLIKLER (2026.08.17 - daha fazla otel kabul etsin / daha verimli calissin):
+- Kaynak arama artik her zaman 4 siteyi de (Hotels.com, Trivago, ETS, Obilet)
+  tarar; onceden 3 site bulununca arama erken kesiliyor, bu da Obilet'i hem
+  eslesme adayi hem de gercek yedek kaynak olarak sistem disinda birakabiliyordu.
+- --kabul-esigi parametresi artik gercekten kullaniliyor: adres/isim agirlikli
+  toplam puan bu esigi gecen ve adreste posta/bina numarasi celismesi olmayan
+  adaylar da (ESIK_PUANI yolu) otomatik kabul edilir. Onceden bu parametre
+  hicbir karari etkilemiyordu.
+- Exa arama/okuma zaman asimlari (60->75sn, 30->45sn) ve gecici hata sonrasi
+  yeniden deneme turu (3->4) artirildi; yavas yuklenen kaynak sayfalari artik
+  daha az sikilikla "gecici" durumda beklemede kalip bir sonraki calismaya
+  kaliyor.
+- Gorsel indirme isci sayisi ust siniri 3'ten 4'e cikarildi (varsayilan hala
+  3); guclu bilgisayarlarda --gorsel-isci 4 ile paralel yukleme hizlandirilabilir.
