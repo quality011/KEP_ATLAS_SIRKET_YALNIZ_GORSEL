@@ -10,6 +10,7 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
+import kimlik
 from secili_atlas import (
     idleri_ayikla,
     secili_otelleri_atlastan_oku,
@@ -565,6 +566,7 @@ def calismayi_surdur(
 
 
 def main():
+    kimlik.ortami_hazirla()
     args = argumanlari_oku()
     ham_idler = args.idler
     if args.id_dosyasi:

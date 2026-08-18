@@ -16,6 +16,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+import kimlik
 from karar_motoru import icerik_var_mi, karar_ver
 
 
@@ -380,6 +381,7 @@ def argumanlari_oku():
 
 
 def main():
+    kimlik.ortami_hazirla()
     args = argumanlari_oku()
     eposta = os.getenv("KEP_ATLAS_EMAIL", "").strip()
     sifre = os.getenv("KEP_ATLAS_PASSWORD", "")

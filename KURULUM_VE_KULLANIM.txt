@@ -1,11 +1,25 @@
 KEP ATLAS SIRKET YALNIZ GORSEL BOTU
 ====================================
 
+Bu program hem macOS hem Windows'ta calisir. Kod ayni; yalniz baslatici
+dosyalar isletim sistemine gore degisir:
+  - macOS  : mac_kur.command, mac_baslat.command, mac_devam.command
+  - Windows: 1_KURULUM_YAP.cmd, 2_ID_LISTESINI_CALISTIR.cmd,
+             3_KALDIGI_YERDEN_DEVAM.cmd
+
+EN KOLAY YOL - TEK BASLATICI (her iki sistemde ayni)
+  python3 calistir.py        (Windows'ta: python calistir.py)
+  Menu acilir: 1) Kurulum  2) Yeni liste  3) Devam  4) Kimlik bilgileri
+  Dogrudan komut da olur:
+     python3 calistir.py kur | baslat | devam | durum
+  Asagidaki platforma ozel dosyalar hala calisir; bunlar alternatiftir.
+
+
 BU SURUMUN AMACI
 - Telegram, Tailscale veya merkezi kumanda kullanmaz.
 - Kullaniciya verilen 6 haneli Kep Atlas ID listesini dogrudan alir.
 - Atlas'ta gorseli olan oteli atlar; yalniz gorseli bos otelleri isler.
-- Dogrulanmis en fazla 3 farkli kaynak siteyi sirayla deneyebilir.
+- Dogrulanmis en fazla 4 farkli kaynak siteyi sirayla deneyebilir.
 - Kaynak onceligi Hotels.com, Trivago, ETS ve son olarak Obilet'tir.
 - Gorselleri cozumurluk filtresinden gecirip 3 paralel Chrome iscisiyle yukler.
 - Icerik ve Genel alanlarina veri yazmaz.
@@ -15,31 +29,99 @@ BU SURUMUN AMACI
   ayrica dogrulanir.
 - Yabanci dilde gelen Trivago URL'leri Turkce galeri sayfasina cevrilir.
 
-HER BILGISAYARDA BIR KEZ YAPILACAK KURULUM
+
+GEREKEN BILGILER (her kullanici icin)
+- Kep Atlas e-posta ve sifre (Atlas'a giris yapan yetkili hesap).
+- Exa API anahtari (sirketin verdigi, exa.ai anahtari).
+- Islenecek 6 haneli Kep Atlas ID listesi.
+Bu bilgiler pakette YOKTUR; her calisana ayrica verilir.
+
+
+ON KOSULLAR
+- Google Chrome kurulu olmalidir (guncel surum).
+- Python 3.11 veya ustu kurulu olmalidir.
+  macOS  : Terminalde "python3 --version" ile kontrol edin.
+           Yoksa: brew install python@3.12  (veya python.org/downloads/macos)
+  Windows: python.org/downloads/windows  (kurulumda "Add python.exe to PATH")
+- Chromedriver'i ayrica kurmaniza gerek yoktur; program otomatik indirir.
+
+
+============================================================
+macOS ICIN
+============================================================
+
+BIR KEZ YAPILACAK KURULUM
+1. ZIP'i bir klasore cikarin (ZIP'in icinden calistirmayin).
+2. Finder'da mac_kur.command dosyasina cift tiklayin.
+   - "Gelistirici dogrulanamadi" uyarisi gelirse: dosyaya sag tiklayip
+     "Ac" (Open) secin veya Terminalde su komutu calistirin:
+        chmod +x mac_*.command
+3. Ekranda "KURULUM BASARILI" yazisini gorene kadar pencereyi kapatmayin.
+
+KIMLIK BILGILERINI KAYDETME (onerilen - her seferinde sormaz)
+- En guvenli yol, bilgileri macOS Anahtar Zinciri'ne (Keychain) kaydetmektir:
+     python3 kimlik.py --kur
+  Bir kez girersiniz; bot sonraki calismalarda sifre sormaz.
+- Alternatif olarak proje klasorune .env dosyasi koyabilirsiniz:
+     cp .env.ornek .env
+  Sonra .env icindeki uc degeri (e-posta, sifre, Exa anahtari) doldurun.
+- Durumu gormek icin:   python3 kimlik.py --durum
+- Kayitlari silmek icin: python3 kimlik.py --sil
+
+HER YENI ID LISTESINDE
+1. mac_baslat.command dosyasina cift tiklayin.
+2. 6 haneli ID'leri boslukla, virgulle veya alt alta yapistirin.
+3. Son ID'den sonra bos satirda bir kez daha Enter'a basin.
+4. Sayiyi kontrol edip BASLAT yazin.
+5. Kimlik bilgileri kayitliysa hic sorulmaz; degilse yalniz eksik olan(lar)
+   ekranda gorunmeden istenir.
+6. Acilan Chrome ve Terminal pencerelerini islem bitene kadar kapatmayin.
+
+KESINTI VEYA PENCERE KAPANMASI
+- Ayni klasorde mac_devam.command dosyasini acin.
+- En son yarim kalan yerel gorev veritabani otomatik bulunur.
+- Daha once yuklenmis gorseller yeniden yuklenmez; Atlas kontrol edilir.
+
+
+============================================================
+WINDOWS ICIN
+============================================================
+
+BIR KEZ YAPILACAK KURULUM
 1. ZIP dosyasini bir klasore cikarin. ZIP'in icinden calistirmayin.
-2. Mumkunse kisa ve yerel bir yol kullanin:
-   C:\KepAtlasGorselBotu
+2. Mumkunse kisa ve yerel bir yol kullanin: C:\KepAtlasGorselBotu
    OneDrive/Google Drive icinde calistirmak tavsiye edilmez.
-3. Google Chrome kurulu olmalidir.
-4. Python 3.11 veya ustu kurulu olmalidir. Yoksa:
-   https://www.python.org/downloads/windows/
-   Kurulumda "Add python.exe to PATH" secenegini isaretleyin.
-5. 1_KURULUM_YAP.cmd dosyasina cift tiklayin.
-6. Ekranda KURULUM BASARILI yazisini gorene kadar pencereyi kapatmayin.
+3. 1_KURULUM_YAP.cmd dosyasina cift tiklayin.
+4. Ekranda "KURULUM BASARILI" yazisini gorene kadar pencereyi kapatmayin.
+
+KIMLIK BILGILERI (istege bagli - her seferinde sormamasi icin)
+- Windows'ta Keychain yoktur. Bilgiler ya calisirken sorulur ya da proje
+  klasorune .env dosyasi konur:
+     copy .env.ornek .env
+  Sonra .env icindeki uc degeri doldurun.
 
 HER YENI ID LISTESINDE
 1. 2_ID_LISTESINI_CALISTIR.cmd dosyasina cift tiklayin.
 2. 6 haneli ID'leri boslukla, virgulle veya alt alta yapistirin.
 3. Son ID'den sonra bos satirda bir kez daha Enter'a basin.
 4. Sayiyi kontrol edip BASLAT yazin.
-5. Yetkili Kep Atlas e-posta/sifresini girin.
-6. Sirketin verdigi Exa API anahtarini girin.
-7. Acilan Chrome ve CMD pencerelerini islem bitene kadar kapatmayin.
+5. Kimlik bilgileri kayitli degilse yetkili e-posta/sifre ve Exa anahtari istenir.
+6. Acilan Chrome ve CMD pencerelerini islem bitene kadar kapatmayin.
 
 KESINTI VEYA CMD KAPANMASI
 - Ayni klasorde 3_KALDIGI_YERDEN_DEVAM.cmd dosyasini acin.
 - En son yarim kalan yerel gorev veritabani otomatik bulunur.
 - Daha once yuklenmis gorseller yeniden yuklenmez; Atlas kontrol edilir.
+
+
+============================================================
+
+KIMLIK BILGISI ONCELIK SIRASI
+Program bilgileri su sirayla arar; ilk bulunan kullanilir:
+  1. Ortam degiskeni (launcher tarafindan verilmis)
+  2. .env dosyasi (proje klasorunde)
+  3. macOS Keychain (yalniz macOS)
+
 
 SIRKET ICIN DAGITIM KURALLARI
 - Her calisan ZIP'i kendi bilgisayarinda ayri klasore cikarmalidir.
@@ -51,21 +133,32 @@ SIRKET ICIN DAGITIM KURALLARI
 - Bu surumde merkezi kilit yoktur; ID dagitiminin cakismamasi yoneticinin
   sorumlulugundadir.
 
+
 RAPORLAR
-- yalniz_gorsel_calismalari\TARIH_SAAT\sonuc.csv
-- yalniz_gorsel_calismalari\TARIH_SAAT\kontrol_edilecek_atlas_linkleri.txt
-- yalniz_gorsel_calismalari\TARIH_SAAT\sorunlu_ve_atlanan_oteller.csv
-- logs\yalniz_gorsel_*.log
+- yalniz_gorsel_calismalari/TARIH_SAAT/sonuc.csv
+- yalniz_gorsel_calismalari/TARIH_SAAT/kontrol_edilecek_atlas_linkleri.txt
+- yalniz_gorsel_calismalari/TARIH_SAAT/sorunlu_ve_atlanan_oteller.csv
+- logs/yalniz_gorsel_*.log
+(Windows'ta yollar ters bolu isaretiyle gorunur.)
+
 
 SORUN GIDERME
-- "No module named selenium": 1_KURULUM_YAP.cmd dosyasini calistirin.
+- "No module named selenium": kurulumu calistirin
+  (mac_kur.command veya 1_KURULUM_YAP.cmd).
 - Python bulunamadi: Python 3.11+ kurup kurulum dosyasini yeniden acin.
+- macOS'ta "gelistirici dogrulanamadi": dosyaya sag tik > Ac, veya
+  chmod +x mac_*.command
+- pillow-avif-plugin kurulmuyor (macOS): Python surumunuz cok yeni olabilir.
+  brew install python@3.12 kurup mac_kur.command dosyasini tekrar calistirin.
 - Exa 401/403: API anahtari yanlis veya yetkisizdir.
 - Exa 402: hesabin bakiyesi/plani yetersizdir.
 - Exa 429: ayni anahtar cok hizli kullaniliyor; bekleyin veya ayri anahtar kullanin.
 - Chrome acilmazsa Chrome'u guncelleyip kurulumu tekrar calistirin.
 
+
 GUVENLIK
 - Sifre ve Exa anahtari ekranda gorunmez okunur.
-- Anahtarlar koda, loga veya ayar dosyasina yazilmaz.
+- Anahtarlar koda, loga veya paylasilan dosyalara yazilmaz.
+- .env dosyasi paylasilmaz/depoya eklenmez (.gitignore korur).
+- macOS'ta bilgiler Keychain'de sifreli saklanabilir (kimlik.py --kur).
 - Program kapandiginda gecici ortam degiskenleri temizlenir.

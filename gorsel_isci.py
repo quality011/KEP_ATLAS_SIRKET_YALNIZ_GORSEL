@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 
+import kimlik
 from veritabani import (
     gorsel_dogrulandi,
     gorsel_hatasi_kaydet,
@@ -271,6 +272,7 @@ def argumanlari_oku():
 
 
 def main():
+    kimlik.ortami_hazirla()
     args = argumanlari_oku()
     gorevler = hazir_gorsel_gorevleri(
         args.db,

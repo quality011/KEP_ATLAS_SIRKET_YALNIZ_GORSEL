@@ -25,6 +25,7 @@ from kaynak_agent import (
     tam_otel_adi_eslesmesi,
     temiz_kaynak_url,
 )
+import kimlik
 from veritabani import (
     atlas_adresi_kaydet,
     kaynak_incelemeye_al,
@@ -759,6 +760,7 @@ def bos_rapor_satiri(gorev):
 
 
 def main():
+    kimlik.ortami_hazirla()
     args = argumanlari_oku()
     exa_api_anahtari = os.getenv("EXA_API_KEY", "").strip()
     if not exa_api_anahtari:

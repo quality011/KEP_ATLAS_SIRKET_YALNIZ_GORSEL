@@ -7,6 +7,7 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
+import kimlik
 from veritabani import (
     baglan,
     gorsel_dogrulandi,
@@ -138,6 +139,7 @@ def yedekle(db_yolu):
 
 
 def main():
+    kimlik.ortami_hazirla()
     args = argumanlari_oku()
     if not 1 <= args.gorsel_isci <= 4:
         raise ValueError("--gorsel-isci 1 ile 4 arasinda olmalidir.")

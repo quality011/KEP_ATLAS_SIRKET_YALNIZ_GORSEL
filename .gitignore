@@ -1,0 +1,15 @@
+# Kimlik bilgileri - ASLA paylasilmaz
+.env
+
+# Python ortami / onbellek
+.venv/
+__pycache__/
+*.pyc
+
+# Calisma ciktilari ve loglar
+logs/
+yalniz_gorsel_calismalari/
+*.db
+*.db-wal
+*.db-shm
+*.lock
