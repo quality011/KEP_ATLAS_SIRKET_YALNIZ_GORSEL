@@ -929,6 +929,81 @@ def obilet_reklamini_kapat(driver, app):
     return False
 
 
+class KaynakGorselsizHatasi(RuntimeError):
+    """Kaynak sayfasi acildi ama tesise ait hic fotograf yok.
+
+    Obilet, tasimadigi oteller icin otel adi ve adresi dogru olan fakat
+    fotografsiz SEO sayfalari uretiyor. Bu sayfalar kaynak dogrulamasini
+    gectigi icin gorsel asamasina kadar geliyor, orada da galeri
+    acilamadigi icin 'galeri acilamadi' hatasina donusuyordu. Iki durum
+    ayni kutuya dustugu surece, tekrar denemekle asla cozulmeyecek
+    oteller sonsuza kadar yeniden deneniyor. Bu hata onlari ayirir.
+    """
+
+
+GORSELSIZ_TESPIT_SCRIPTI = r"""
+    const normalize = (value) => (value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+
+    // 1) '+N Fotograf' / 'Galeri (N)' rozeti: fotograf VARSA gorunur.
+    let rozet = false;
+    for (const el of document.querySelectorAll('p, span, div, button, a')) {
+        if (el.children.length) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) continue;
+        const t = normalize(el.textContent);
+        if (/^\+?\d+\s*fotograf(?:lar)?$/.test(t) || /^galeri\s*\(\d+\)$/.test(t)) {
+            rozet = true; break;
+        }
+    }
+
+    // 2) Kapak gorseli placeholder mi?
+    const kaynaklar = [];
+    for (const i of document.querySelectorAll('img')) {
+        const u = i.currentSrc || i.src || '';
+        if (u) kaynaklar.push(u);
+    }
+    for (const e of document.querySelectorAll('*')) {
+        const v = getComputedStyle(e).backgroundImage;
+        if (v && v !== 'none' && v.includes('http')) {
+            kaynaklar.push(v.slice(v.indexOf('http')).replace(/["')].*$/, ''));
+        }
+    }
+    const placeholder = kaynaklar.some(u => /placeholder-cover|placeholder\/placeholder/i.test(u));
+
+    return { rozet: rozet, placeholder: placeholder, gorsel_adedi: kaynaklar.length };
+"""
+
+
+def kaynak_gorselsiz_mi(driver, site_turu, app=None):
+    """Sayfada tesise ait hic fotograf olmadigini POZITIF kanitla belirler.
+
+    Yalniz olculmus isaretlere guvenir: fotograf sayisi rozetinin yoklugu ve
+    kapak gorselinin placeholder olmasi. Ikisi birden saglanmadikca False
+    doner; yani emin olunmayan sayfa gorselsiz sayilmaz ve normal galeri
+    akisi denenmeye devam eder.
+
+    Not: 'Bu tesisin bilgileri sistemlerimizde dogrulanamamistir' uyarisi
+    ayirt edici DEGILDIR; fotografi olan otellerde de gorunuyor.
+    """
+    if site_turu not in ("obilet", "ets"):
+        return False
+    try:
+        sonuc = driver.execute_script(GORSELSIZ_TESPIT_SCRIPTI)
+    except Exception:
+        return False
+    if not isinstance(sonuc, dict):
+        return False
+    gorselsiz = not sonuc.get("rozet") and bool(sonuc.get("placeholder"))
+    if gorselsiz and app is not None:
+        app.log_yaz(
+            "Kaynakta fotograf rozeti yok ve kapak placeholder: "
+            "bu sayfada otel gorseli bulunmuyor."
+        )
+    return gorselsiz
+
+
 def sayili_galeri_kutusuna_tikla(driver, site_turu, app=None):
     """ETS 'Galeri (N)' veya Obilet '+N Fotoğraf' kutusunu güvenle açar."""
     aday_scripti = r"""

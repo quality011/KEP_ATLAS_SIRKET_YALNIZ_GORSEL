@@ -13,3 +13,10 @@ yalniz_gorsel_calismalari/
 *.db-wal
 *.db-shm
 *.lock
+
+# Gecici otel gorselleri
+work/
+
+# Yerel yedekler
+*.yedek
+*.yedek_*

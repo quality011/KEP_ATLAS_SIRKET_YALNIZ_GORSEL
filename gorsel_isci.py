@@ -149,6 +149,7 @@ def gorevi_isle(
         indirilenler = []
         secilen_kaynak = None
         kaynak_hatalari = []
+        gorselsiz_sayisi = 0
         for kaynak_no, kaynak in enumerate(kaynaklar, 1):
             kaynak_url = kaynak["url"]
             site = kaynak["site"]
@@ -162,6 +163,17 @@ def gorevi_isle(
                 )
                 time.sleep(0.5)
                 motor.cerez_uyarisini_kapat(driver)
+                # Galeriyi acmaya calismadan once sayfada hic fotograf olup
+                # olmadigini dogrula. Obilet tasimadigi oteller icin adi ve
+                # adresi dogru ama fotografsiz sayfa uretiyor; bunlarda galeri
+                # aramak bosuna zaman kaybi ve hatayi "galeri acilamadi" diye
+                # yanlis etiketliyor.
+                if motor.kaynak_gorselsiz_mi(
+                    driver, motor.kaynak_site_turu(kaynak_url), app
+                ):
+                    raise motor.KaynakGorselsizHatasi(
+                        "kaynak sayfasinda tesise ait fotograf yok"
+                    )
                 motor.kaynak_galerisini_ac(driver, app)
                 image_urls = motor.galeri_gorsellerini_topla(driver, app)
 
@@ -184,6 +196,8 @@ def gorevi_isle(
             except Exception as kaynak_hatasi:
                 if klasor.exists():
                     shutil.rmtree(klasor, ignore_errors=True)
+                if isinstance(kaynak_hatasi, motor.KaynakGorselsizHatasi):
+                    gorselsiz_sayisi += 1
                 ozet = f"{site}: {kaynak_hatasi}"
                 kaynak_hatalari.append(ozet)
                 app.log_yaz(f"KAYNAK BAŞARISIZ: {ozet}")
@@ -191,9 +205,17 @@ def gorevi_isle(
                     app.log_yaz("Sıradaki güvenli alternatif siteye geçiliyor...")
 
         if not indirilenler or secilen_kaynak is None:
+            if kaynak_hatalari and gorselsiz_sayisi == len(kaynak_hatalari):
+                # Bu otel yeniden denemekle asla cozulmez; yeni bir kaynak
+                # sitesi gerekir. Ayri etiket, o listeyi temiz cikarir.
+                raise RuntimeError(
+                    "KAYNAKTA_GORSEL_YOK: doğrulanmış "
+                    f"{len(kaynak_hatalari)} kaynağın hiçbirinde tesise ait "
+                    "fotoğraf bulunmuyor: " + " | ".join(kaynak_hatalari)
+                )
             raise RuntimeError(
-                "En fazla 3 güvenli kaynak denendi, görsel alınamadı: "
-                + " | ".join(kaynak_hatalari)
+                f"{len(kaynak_hatalari)} güvenli kaynak denendi, görsel "
+                "alınamadı: " + " | ".join(kaynak_hatalari)
             )
         if secilen_kaynak["url"] != gorev["kaynak_url"]:
             gorsel_kaynagini_degistir(

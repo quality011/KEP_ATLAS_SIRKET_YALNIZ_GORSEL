@@ -17,6 +17,7 @@ from kaynak_agent import (
     KaynakAramaSonucu,
     ad_benzerligi,
     adres_benzerligi,
+    GENEL_KELIMELER,
     gorev_degeri,
     metni_normallestir,
     otel_sayfasi_mi,
@@ -49,6 +50,10 @@ EXA_GORSEL_SITE_GRUPLARI = (
     ("obilet.com",),
 )
 URL_DESENI = re.compile(r"https?://[^\s<>\]\[\"']+")
+# Ad on filtresi esigi. Kayitli 14252 aday uzerinde olculdu: 0.65'e kadar
+# kaybedilen tek kabul 'Ozukara Apartments 2' -> 'Zera Bodrum' ki o zaten
+# yanlis eslesme. 0.70'ten sonra dogru eslesmeler de elenmeye basliyor.
+AD_ON_FILTRE_ESIGI = 0.65
 ADRES_ISARETLERI = (
     "mah", "mahalle", "cad", "cadde", "sok", "sokak", "bulvar",
     "no:", "no ", "adres", "address", "antalya", "alanya", "kemer",
@@ -57,7 +62,7 @@ ADRES_ISARETLERI = (
 RAPOR_ALANLARI = (
     "otel_id", "otel_adi", "bolge", "atlas_adres", "karar", "site",
     "kaynak_url", "sayfa_otel_adi", "kaynak_adres", "toplam_puan",
-    "ad_puani", "adres_puani", "aday_sayisi", "exa_suresi_sn",
+    "ad_puani", "adres_puani", "aday_sayisi", "ham_aday_sayisi", "exa_suresi_sn",
     "okuma_suresi_sn", "dogrulama_turu", "inceleme_nedeni", "yazma_durumu",
     "hata",
 )
@@ -72,6 +77,15 @@ GECERSIZ_BASLIK_PARÇALARI = (
 
 class PilotHatasi(RuntimeError):
     pass
+
+
+class KimlikVeyaBakiyeHatasi(PilotHatasi):
+    """Anahtar gecersiz ya da Exa bakiyesi bitti; calisma yurutulemiyor.
+
+    Otel bazli bir sorun olmadigi icin gorevler kuyrukta korunur. Ayrica ust
+    dongu bu hatayi gorunce calismayi durdurur; aksi halde bakiye bittiginde
+    1000 otel bosuna dolasilip log siskinlesiyordu.
+    """
 
 
 class GeciciAramaHatasi(PilotHatasi):
@@ -270,6 +284,60 @@ def exa_sorgusu(gorev, alanlari_ekle=True):
     return " ".join(parcalar)
 
 
+def exa_anahtar_sorgusu(gorev):
+    """Tesisi kimligiyle bulan kisa, anahtar kelime tabanli sorgu uretir.
+
+    Uzun dogal dilli sorgu Exa'yi anlamsal aramaya itiyor ve "ayni bolgedeki
+    herhangi bir otel" sonuclarini one cikariyordu; Marmaris'teki Nerium icin
+    Turunc Resort donmesinin sebebi buydu. Kimlik aramasinda otel adi ve tek
+    bir konum ipucu yeterlidir.
+    """
+    ad = (gorev["otel_adi"] or "").strip()
+    parcalar = [f'"{ad}"' if ad else ""]
+    konumlar = atlas_konum_ipuclari(gorev)
+    if konumlar:
+        parcalar.append(konumlar[0])
+    parcalar.append("otel")
+    return " ".join(parca for parca in parcalar if parca)
+
+
+def aday_ad_havuzu(kayit):
+    """Aday kaydinin basligi ve URL slugundan normallestirilmis kelime havuzu."""
+    havuz = set(metni_normallestir(kayit.get("title", "") or "").split())
+    yol = unquote(urlparse(kayit.get("url", "") or "").path or "").replace("-", " ")
+    return havuz | set(metni_normallestir(yol).split())
+
+
+def aday_adi_ilgili_mi(gorev, kayit, esik=AD_ON_FILTRE_ESIGI):
+    """Arama gurultusunu, sayfa icerigi okunmadan once ad kanitiyla eler.
+
+    Tek basina benzerlik esigi yetmez: "Nese" -> "Nese Otel Cesme, Turkiye -
+    www.trivago.com.tr" gibi basliklarda site eki puani dusuruyor. Bu yuzden
+    ayirt edici ad kelimesinin baslikta veya URL slugunda gecmesi de kabul
+    gerekcesi sayilir.
+    """
+    baslik = kayit.get("title", "") or ""
+    havuz = aday_ad_havuzu(kayit)
+    for ad in (gorev["otel_adi"], gorev_degeri(gorev, "ham_adi", "")):
+        if not ad:
+            continue
+        if ad_benzerligi(ad, baslik) >= esik:
+            return True
+        ayirt_edici = [
+            kelime
+            for kelime in metni_normallestir(ad).split()
+            if kelime not in GENEL_KELIMELER and len(kelime) >= 4
+        ]
+        if ayirt_edici and any(kelime in havuz for kelime in ayirt_edici):
+            return True
+    return False
+
+
+def adaylari_ad_ile_on_filtrele(gorev, kayitlar):
+    """Ad kaniti tasimayan adaylari havuzdan cikarir."""
+    return [kayit for kayit in kayitlar if aday_adi_ilgili_mi(gorev, kayit)]
+
+
 def _json_adaylarini_cikar(nesne, bulunan):
     if isinstance(nesne, dict):
         url = nesne.get("url") or nesne.get("link")
@@ -347,10 +415,17 @@ def _exa_api_json(api_anahtari, endpoint, govde, timeout=60, azami_deneme=3):
                 return json.loads(yanit.read().decode("utf-8", errors="replace"))
         except HTTPError as hata:
             son_hata = hata
+            # Anahtar ve bakiye hatalari otel hakkinda hicbir sey soylemez;
+            # calismanin kendisi yurumuyor demektir. Kalici PilotHatasi olarak
+            # birakilirsa her otel "AGENT_REACH_SORUNLU: bakiye yetersiz" diye
+            # INSAN_KONTROLU'ne yaziliyor ve kredi eklendiginde bir daha hic
+            # denenmiyordu. GeciciAramaHatasi otelleri KAYNAK_BEKLIYOR birakir.
             if hata.code in (401, 403):
-                raise PilotHatasi("Exa API anahtari gecersiz veya yetkisiz.") from hata
+                raise KimlikVeyaBakiyeHatasi(
+                    "Exa API anahtari gecersiz veya yetkisiz."
+                ) from hata
             if hata.code == 402:
-                raise PilotHatasi(
+                raise KimlikVeyaBakiyeHatasi(
                     "Exa API bakiyesi yetersiz. Exa hesabina kredi ekleyin."
                 ) from hata
             if hata.code == 429:
@@ -421,13 +496,18 @@ def _exa_sonuc_kayitlari(veri):
 
 def exa_api_ara_ve_icerik(
     api_anahtari, sorgu, sonuc_adedi=10, timeout=60, icerik_getir=True,
-    alanlar=None,
+    alanlar=None, arama_turu="auto",
 ):
-    """Exa Search ile URL adaylarini ve sayfa metnini tek istekte getirir."""
+    """Exa Search ile URL adaylarini ve sayfa metnini tek istekte getirir.
+
+    ``arama_turu`` Exa'nin arama kipini secer. ``keyword`` tesisi adiyla tekil
+    olarak arar; ``auto`` noral aramaya dusebildigi icin ayni bolgedeki baska
+    otelleri one cikarabilir.
+    """
     govde = {
         "query": sorgu,
         "numResults": max(1, min(20, sonuc_adedi)),
-        "type": "auto",
+        "type": arama_turu,
         "includeDomains": list(alanlar or IZINLI_ALANLAR),
         "userLocation": "TR",
     }
@@ -441,7 +521,8 @@ def exa_api_ara_ve_icerik(
 
 
 def exa_api_oncelikli_gorsel_adaylari(
-    api_anahtari, sorgu, sonuc_adedi=10, timeout=60, azami_site=4
+    api_anahtari, sorgu, sonuc_adedi=10, timeout=60, azami_site=4,
+    arama_turu="auto", icerik_getir=True,
 ):
     """Siteleri ayri ayri arar; adres/isim eslesmesi icin butun izinli siteleri tarar.
 
@@ -465,8 +546,9 @@ def exa_api_oncelikli_gorsel_adaylari(
             sorgu,
             site_basina,
             timeout,
-            icerik_getir=True,
+            icerik_getir=icerik_getir,
             alanlar=alan_grubu,
+            arama_turu=arama_turu,
         )
         for kayit in grup_kayitlari:
             url = temiz_kaynak_url(kayit.get("url", ""))
@@ -489,18 +571,34 @@ def exa_api_ara(api_anahtari, sorgu, sonuc_adedi=10, timeout=60):
     ]
 
 
+EXA_ICERIK_YIGIN_BOYUTU = 10
+
+
 def exa_api_icerikleri_oku(api_anahtari, urller, timeout=30):
-    """Search metin dondurmezse bilinen URL'leri Exa Contents ile okur."""
-    temiz_urller = exa_urllerini_cikar("\n".join(urller))
+    """Search metin dondurmezse bilinen URL'leri Exa Contents ile okur.
+
+    Liste eskiden ilk 10 URL'de sessizce kesiliyordu. Noral gecis icerik
+    getirmeden calistigi icin okunacak URL sayisi artik duzenli olarak 10'u
+    asiyor; kesilen adaylar "metin dondurmedi" hatasina donusup oteli
+    gereksiz yere ERTELENDI yapiyordu. Bu yuzden istek yiginlara bolunur.
+    """
+    temiz_urller = exa_urllerini_cikar(chr(10).join(urller))
     if not temiz_urller:
         return []
-    govde = {
-        "urls": temiz_urller[:10],
-        "text": {"maxCharacters": 20000, "verbosity": "compact"},
-        "livecrawlTimeout": min(15000, max(5000, int(timeout * 1000))),
-    }
-    veri = _exa_api_json(api_anahtari, "contents", govde, timeout)
-    return _exa_sonuc_kayitlari(veri)
+    kayitlar = []
+    for bas in range(0, len(temiz_urller), EXA_ICERIK_YIGIN_BOYUTU):
+        yigin = temiz_urller[bas:bas + EXA_ICERIK_YIGIN_BOYUTU]
+        govde = {
+            "urls": yigin,
+            "text": {"maxCharacters": 20000, "verbosity": "compact"},
+            "livecrawlTimeout": min(15000, max(5000, int(timeout * 1000))),
+        }
+        kayitlar.extend(
+            _exa_sonuc_kayitlari(
+                _exa_api_json(api_anahtari, "contents", govde, timeout)
+            )
+        )
+    return kayitlar
 
 
 def sayfa_basligini_cikar(metin):
@@ -601,9 +699,17 @@ def kalici_sonucu_yaz(db_yolu, gorev, karar, en_iyi, adaylar, neden):
         )
         return "KAYNAK_KAYDEDILDI"
 
-    aciklama = "AGENT_REACH_SORUNLU: " + (
-        neden or "Yuksek guvenli dogrudan otel eslesmesi bulunamadi."
-    )
+    # Eslesme reddi ile "dogru otel aday havuzunda hic yok" ayni kutuya
+    # dusunce gercek darbogaz gizleniyordu. Durum degeri INSAN_KONTROLU olarak
+    # kalir (diger araclar bu duruma bagli), fakat neden oneki ayrilir.
+    if karar == "BULUNAMADI":
+        aciklama = "KAYNAK_BULUNAMADI: " + (
+            neden or "Ad kaniti tasiyan aday bulunamadi."
+        )
+    else:
+        aciklama = "AGENT_REACH_SORUNLU: " + (
+            neden or "Yuksek guvenli dogrudan otel eslesmesi bulunamadi."
+        )
     kaynak_incelemeye_al(
         db_yolu,
         gorev["otel_id"],
@@ -620,7 +726,35 @@ ADRES_OLMAYAN_ARAYUZ_IFADELERI = (
     "save", "restaurant", "outdoor pool", "amenities", "facilities",
     "baska bir oda ekle", "add another room", "tamam", "done", "offers",
     "uygulamayi ac", "open app", "giris yap", "sign in",
+    # Hotels.com tarih secici ve yorum ozeti metinleri adres sanilıyordu.
+    "current months are", "ratings across the web", "based on",
+    "check in", "check out", "giris tarihi", "cikis tarihi",
+    "free cancellation", "ucretsiz iptal", "gecelik", "per night",
+    # Olanak listeleri de virgullu ve sayili oldugu icin adres gibi gorunuyor.
+    "coffee tea maker", "microwave", "stovetop", "fridge", "air conditioning",
+    "free wifi", "ucretsiz wifi", "breakfast included", "kahvalti dahil",
 )
+
+# Ingilizce gun kisaltmalari ve 'May 14' bicimindeki ay+gun kaliplari.
+# Ornek cop adresler:
+#   "Dates, Wed, May 14Tue, May 20"
+#   "your current months are June, 2025 and July, 2025."
+#   "Sat, Aug 2Mon, Aug 4"
+# Bu satirlar iki virgul ve rakam tasidigi icin eski kural onlari acik adres
+# sanıyor, adres puani anlamsiz cikiyor ve gercek aday eleniyordu.
+TARIH_METNI_DESENI = re.compile(
+    r"\b(?:mon|tue|wed|thu|fri|sat|sun)\b"
+    r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}\b"
+    r"|\bdates\b"
+    , re.I,
+)
+
+
+def _adres_disi_gurultu_mu(norm):
+    """Tarih secici, yorum ozeti ve olanak listelerini adres disi sayar."""
+    return bool(TARIH_METNI_DESENI.search(norm)) or any(
+        ifade in norm for ifade in ADRES_OLMAYAN_ARAYUZ_IFADELERI
+    )
 
 
 def _adres_satiri_mi(satir):
@@ -630,7 +764,7 @@ def _adres_satiri_mi(satir):
         return False
     if "http://" in satir.casefold() or "https://" in satir.casefold():
         return False
-    if "](" in satir or any(ifade in norm for ifade in ADRES_OLMAYAN_ARAYUZ_IFADELERI):
+    if "](" in satir or _adres_disi_gurultu_mu(norm):
         return False
     adres_isareti = bool(
         re.search(
@@ -754,6 +888,7 @@ def bos_rapor_satiri(gorev):
         "karar": "HATA", "site": "", "kaynak_url": "",
         "sayfa_otel_adi": "", "kaynak_adres": "", "toplam_puan": "",
         "ad_puani": "", "adres_puani": "", "aday_sayisi": 0,
+        "ham_aday_sayisi": 0,
         "exa_suresi_sn": 0, "okuma_suresi_sn": 0, "dogrulama_turu": "",
         "inceleme_nedeni": "", "yazma_durumu": "YAZMA_YOK", "hata": "",
     }
@@ -838,17 +973,61 @@ def main():
                         )
 
                     an = time.monotonic()
-                    sorgu = exa_sorgusu(gorev, alanlari_ekle=False)
-                    exa_kayitlari = exa_api_oncelikli_gorsel_adaylari(
-                        exa_api_anahtari,
-                        sorgu,
-                        max(1, args.sonuc_adedi),
-                        args.exa_timeout,
-                        azami_site=len(EXA_GORSEL_SITE_GRUPLARI),
+                    # Iki gecisin BIRLESIMI alinir. Anahtar kelime gecisi tesisi
+                    # kimligiyle bulur; noral gecis ise Obilet'teki
+                    # "oranj-ranch-orange-ranch" gibi farkli yazilmis sayfalari
+                    # yakalar. Yedek gecis yalniz birincisi bos donunce
+                    # calistirildiginda, birinciden gelen TEK bir yanlis aday
+                    # yedegi bastirip dogru oteli havuz disinda birakiyordu.
+                    # Eleme artik tek noktada, ad on filtresinde yapilir.
+                    aramalar = (
+                        ("ANAHTAR", exa_anahtar_sorgusu(gorev), "keyword", True),
+                        (
+                            "NORAL",
+                            exa_sorgusu(gorev, alanlari_ekle=False),
+                            "auto",
+                            # Icerik bu geciste de arama ile birlikte gelir.
+                            # Icerigi sonraya birakmak kotadan tasarruf ediyordu
+                            # ama havuza metinsiz kayit sokuyor; tek bir
+                            # taranamayan aday bile "okunamadi" korumasini
+                            # tetikleyip oteli ERTELENDI yapiyordu.
+                            True,
+                        ),
+                    )
+                    ham_kayitlar = []
+                    gorulen_urller = set()
+                    for etiket, sorgu, arama_turu, icerik_getir in aramalar:
+                        gecis_kayitlari = exa_api_oncelikli_gorsel_adaylari(
+                            exa_api_anahtari,
+                            sorgu,
+                            max(1, args.sonuc_adedi),
+                            args.exa_timeout,
+                            azami_site=len(EXA_GORSEL_SITE_GRUPLARI),
+                            arama_turu=arama_turu,
+                            icerik_getir=icerik_getir,
+                        )
+                        yeni_adet = 0
+                        for kayit in gecis_kayitlari:
+                            anahtar = temiz_kaynak_url(kayit.get("url", ""))
+                            if not anahtar or anahtar in gorulen_urller:
+                                continue
+                            gorulen_urller.add(anahtar)
+                            ham_kayitlar.append(kayit)
+                            yeni_adet += 1
+                        print(
+                            f"Exa {etiket} ({arama_turu}): "
+                            f"{len(gecis_kayitlari)} aday, {yeni_adet} yeni"
+                        )
+                    ham_aday_sayisi = len(ham_kayitlar)
+                    exa_kayitlari = adaylari_ad_ile_on_filtrele(gorev, ham_kayitlar)
+                    print(
+                        f"Ad ön filtresi: {ham_aday_sayisi} -> "
+                        f"{len(exa_kayitlari)} aday"
                     )
                     urller = [kayit["url"] for kayit in exa_kayitlari]
                     arama_kaynagi = "Exa Search + Contents API"
                     satir["exa_suresi_sn"] = round(time.monotonic() - an, 2)
+                    satir["ham_aday_sayisi"] = ham_aday_sayisi
                     print(f"{arama_kaynagi}: {len(urller)} doğrudan otel URL adayı")
 
                     an = time.monotonic()
@@ -918,7 +1097,15 @@ def main():
                             f"adres={en_iyi['adres_puani']:.3f} | {en_iyi['url']}"
                         )
                     else:
-                        print("BULUNAMADI: okunabilir ve puanlanabilir aday yok.")
+                        if ham_aday_sayisi and not urller:
+                            inceleme_nedeni = "KAYNAK_BULUNAMADI_AD_ESLESMEDI"
+                        elif not ham_aday_sayisi:
+                            inceleme_nedeni = "KAYNAK_BULUNAMADI_ARAMA_BOS"
+                        satir["inceleme_nedeni"] = inceleme_nedeni
+                        print(
+                            f"BULUNAMADI ({inceleme_nedeni}): "
+                            f"{ham_aday_sayisi} ham aday, ad kaniti tasiyan yok."
+                        )
                     if okuma_hatalari:
                         satir["hata"] = " | ".join(okuma_hatalari)[:1800]
                     if args.onayla:
@@ -931,6 +1118,20 @@ def main():
                             inceleme_nedeni,
                         )
                         print(f"KUYRUK: {satir['yazma_durumu']}")
+                except KimlikVeyaBakiyeHatasi as hata:
+                    # Otel kuyrukta korunur ve calisma hemen durdurulur.
+                    satir["karar"] = "ERTELENDI"
+                    satir["hata"] = f"{type(hata).__name__}: {hata}"
+                    satir["yazma_durumu"] = "KAYNAK_BEKLIYOR_KORUNDU"
+                    print(f"DURDURULDU: {hata}")
+                    print(
+                        "KUYRUK: KAYNAK_BEKLIYOR olarak korundu; otel sorunlu "
+                        "sayilmadi. Sorun giderilince kaldigi yerden devam eder."
+                    )
+                    sayac[satir["karar"]] += 1
+                    yazici.writerow(satir)
+                    dosya.flush()
+                    break
                 except GeciciAramaHatasi as hata:
                     # Kota/ağ kesintisi oteli yanlış yapmaz. Yeniden çalıştırılabilmesi
                     # için veritabanındaki KAYNAK_BEKLIYOR durumu aynen korunur.
